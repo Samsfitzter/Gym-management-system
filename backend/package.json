@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node migrate.js && node server.js",
+    "build": "echo 'No build step required'",
     "dev": "nodemon server.js",
     "migrate": "node migrate.js",
     "seed": "node seed.js"
