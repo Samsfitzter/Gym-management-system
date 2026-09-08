@@ -1,6 +1,7 @@
 import pool from '../db/database.js';
 import AttendanceService from './attendanceService.js';
 import { getLocalDateStr, getOffsetLocalDateStr, getTodayStr, parseLocalDateStr, formatUTCDateStr } from '../utils/dateUtils.js';
+import { generateReceiptNumber } from '../utils/receiptUtils.js';
 
 export const MEMBERSHIP_PLANS = {
   '1 Day': { price: 150 },
@@ -167,11 +168,8 @@ export class MemberService {
 
       // Log initial payment if greater than 0
       if (initialPayment > 0) {
-        // Generate receipt number
-        const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-        const countRes = await client.query('SELECT COUNT(*) as count FROM payments');
-        const count = parseInt(countRes.rows[0]?.count || 0, 10) + 1;
-        const receipt_number = `REC-${dateStr}-${String(count).padStart(4, '0')}`;
+        // Generate unique receipt number
+        const receipt_number = await generateReceiptNumber(client, join_date);
 
         await client.query(
           `INSERT INTO payments (member_id, amount, date, payment_method, receipt_number, status, collected_by)
@@ -347,11 +345,8 @@ export class MemberService {
       throw new Error('Duplicate renewal: Membership is already renewed to this date');
     }
 
-    // Auto-generate receipt inside helper or service
-    const dateStr = todayStr.replace(/-/g, '');
-    const countRes = await pool.query('SELECT COUNT(*) as count FROM payments');
-    const count = parseInt(countRes.rows[0]?.count || 0, 10) + 1;
-    const receiptNum = `REC-${dateStr}-${String(count).padStart(4, '0')}`;
+    // Auto-generate unique receipt inside helper or service
+    const receiptNum = await generateReceiptNumber(pool, todayStr);
 
     // Perform database operations within a TRANSACTION
     const client = await pool.connect();

@@ -1,5 +1,6 @@
 import pool from '../db/database.js';
 import { getTodayStr } from '../utils/dateUtils.js';
+import { generateReceiptNumber } from '../utils/receiptUtils.js';
 
 const processedIdempotencyKeys = new Set();
 
@@ -82,11 +83,8 @@ export class PaymentService {
         throw new Error('Member not found');
       }
 
-      // Generate receipt number
-      const dateStr = getTodayStr().replace(/-/g, '');
-      const countRes = await client.query('SELECT COUNT(*) as count FROM payments');
-      const count = parseInt(countRes.rows[0]?.count || 0, 10) + 1;
-      const receipt_number = `REC-${dateStr}-${String(count).padStart(4, '0')}`;
+      // Generate unique receipt number
+      const receipt_number = await generateReceiptNumber(client, date);
 
       // Insert payment
       const result = await client.query(
