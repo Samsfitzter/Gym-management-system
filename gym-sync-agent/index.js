@@ -12,10 +12,11 @@ async function performSync() {
     return;
   }
   
-  // Quick lock to prevent concurrent local syncs (lock ID is arbitrary but must be unique to SyncAgent)
-  const client = await pool.connect();
+  let client = null;
   let acquiredHere = false;
   try {
+    // Quick lock to prevent concurrent local syncs (lock ID is arbitrary but must be unique to SyncAgent)
+    client = await pool.connect();
     const lockAcquired = await client.query('SELECT pg_try_advisory_lock($1) as locked', [SYNC_AGENT_LOCK_ID]);
     if (!lockAcquired.rows[0].locked) {
       console.log('[SyncAgent] Another instance is currently syncing. Skipping...');
@@ -25,17 +26,19 @@ async function performSync() {
 
     isSyncing = true;
     const result = await syncService.runSync();
-    if (result.inserted > 0) {
+    if (result && result.inserted > 0) {
       console.log(`[${new Date().toISOString()}] [SyncAgent] Sync completed: ${result.inserted} raw events inserted.`);
     }
 
   } catch (err) {
     console.error(`[${new Date().toISOString()}] [SyncAgent] Sync failed:`, err.message);
   } finally {
-    if (acquiredHere) {
-      await client.query('SELECT pg_advisory_unlock($1)', [SYNC_AGENT_LOCK_ID]);
+    if (client) {
+      if (acquiredHere) {
+        await client.query('SELECT pg_advisory_unlock($1)', [SYNC_AGENT_LOCK_ID]).catch(() => {});
+      }
+      client.release();
     }
-    client.release();
     isSyncing = false;
   }
 }
@@ -43,9 +46,13 @@ async function performSync() {
 async function startAgent() {
   console.log('[SyncAgent] Starting up...');
   
-  // 1. Immediate sync on startup
+  // 1. Immediate sync on startup (fail-safe so polling loop always starts)
   console.log('[SyncAgent] Running initial startup sync...');
-  await performSync();
+  try {
+    await performSync();
+  } catch (err) {
+    console.error('[SyncAgent] Initial startup sync encountered error, continuing to polling loop:', err.message);
+  }
   
   // 2. Schedule polling loop
   const intervalMs = parseInt(process.env.BIOMETRIC_SYNC_INTERVAL_MS || '60000', 10);
@@ -55,3 +62,4 @@ async function startAgent() {
 }
 
 startAgent();
+
